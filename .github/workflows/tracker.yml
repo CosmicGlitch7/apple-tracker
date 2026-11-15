@@ -1,0 +1,48 @@
+name: Apple stock check
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # about every 15 minutes (GitHub may run it late)
+  workflow_dispatch:          # lets you press "Run workflow" manually
+
+concurrency:
+  group: stock-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install browser
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+          sudo apt-get install -y xvfb
+
+      # Remember what was in stock last time, so you only get alerts for NEW restocks
+      - name: Restore last-known stock
+        uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: state-none
+          restore-keys: |
+            state-
+
+      - name: Run scan
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: xvfb-run -a python tracker_once.py
+
+      - name: Save last-known stock
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state.json
+          key: state-${{ github.run_id }}-${{ github.run_attempt }}
